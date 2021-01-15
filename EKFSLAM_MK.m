@@ -61,16 +61,13 @@ Rsigma=diag([0.1 toRadian(1)]).^2;
 
 LM = LM';
 
-MAX_RANGE=10;%最大観測距離
+MAX_RANGE=15;%最大観測距離
 
 alpha=1;%ランドマーク識別用マハラノビス距離閾値
 
 PEst = diag(ones(1,3)*10^-4);
-initP=eye(2)*10000;
-%movcount=0;
+initP=eye(2)*100000;
 
-iwp = 1; % index to first waypoint 
-Omega   = 0; % initial steer angle
 jj = [];
 
 % SEIF-SLAM
@@ -89,23 +86,26 @@ while iwp ~= 0
     [Omega, iwp] = compute_steering(xTrue, wp, iwp, AT_WAYPOINT, Omega, RATEG, MAXG, dt);
 
     % perform loops: if final waypoint reached, go back to first
-    if iwp==0 & NUMBER_LOOPS > 1, iwp=1; NUMBER_LOOPS= NUMBER_LOOPS-1; end
+    if iwp==0 && NUMBER_LOOPS > 1, iwp=1; NUMBER_LOOPS= NUMBER_LOOPS-1; end
     
     u = [V Omega]';
+    %--------------------------------------------------------
+    % EKF predict step
+%     [xEst,PEst] = predict (xEst, PEst, u);
+   
+    dtsum= dtsum + dt;
+    if dtsum >= DT_OBSERVE
+        dtsum = 0;
+        % Observation
+        [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE);
+
+        % EKF-SLAM
+%         [xEst,PEst,NL,yy,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj);     
+
+        % SEIF-SLAM
+        [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j); 
+    end
     
-%for i=1 : nSteps
-    time = time + dt;
-    % Input
-    %u=doControl(time)
-    % Observation
-    [z,xTrue,xd,u]=Observation(xTrue, xd, u, LM, MAX_RANGE);
-    
-    % EKF-SLAM
-        [xEst,PEst,NL,yy,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj);     
-    
-    % SEIF-SLAM
-%       [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j); 
-     
     %Simulation Result
     result.time=[result.time; time];
     result.xTrue=[result.xTrue; xTrue'];
@@ -114,7 +114,7 @@ while iwp ~= 0
     result.u=[result.u; u'];
     
     % offline data store
-    data = store_data(data, xEst, PEst, xTrue);
+%     data = store_data(data, xEst, PEst, xTrue);
     
 %     %pcov = make_covariance_ellipses(xEst, PEst);
 %     ptmp= make_covariance_ellipses(xEst(1:3),PEst(1:3,1:3));
@@ -143,13 +143,13 @@ while iwp ~= 0
     
     %Animation (remove some flames)
     pcount= pcount+1;
-    if pcount == 100
+    if pcount == 200
         Animation(result,xTrue,LM,z,xEst);
         pcount=0;
     end
 end
 toc
-% DrawGraph(result,xEst,LM);
+DrawGraph(result,xEst,LM);
 
 function [plines, pcount, dtsum, ftag, da_table, iwp, Omega, data] = Init_other_parameter(lm, xEst, xTrue, PEst)
     % % initialise other variables and constants
@@ -275,32 +275,9 @@ B = [dt*cos(x(3)) 0
      dt*sin(x(3)) 0
      0 dt];
 
-x= x+F'*B*u;
-% x(3)=PI2PI(x(3));%角度補正
+x = x+F'*B*u;
+x(3) = PI2PI(x(3));%角度補正
 end
-
-% function [z, x, xd, u] = Observation(x, xd, u, LM ,MAX_RANGE)
-% %Calc Observation from noise prameter
-% global Qsigma;
-% global Rsigma;
-%  
-% x=f(x, u);% Ground Truth
-% u=u+Qsigma*randn(2,1);%add Process Noise
-% xd=f(xd, u);% Dead Reckoning
-% %Simulate Observation
-% z=[];
-% for iz=1:length(LM(:,1))
-%     %LMの位置をロボット座標系に変換
-%     yaw=zeros(3,1);
-%     yaw(3)=-x(3);
-%     localLM=HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
-%     d=norm(localLM);%距離
-%     if d<MAX_RANGE %観測範囲内
-%         noise=Rsigma*randn(2,1);
-%         z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
-%     end
-% end
-% end
 
 function [z, x, xd, u] = Observation(x, xd, u, LM ,MAX_RANGE)
 %Calc Observation from noise prameter
@@ -323,32 +300,37 @@ for iz=1:length(LM(:,1))
     dy  = localLM(2) - x(2);
     phi = x(3);
     
-    if abs(dx) < MAX_RANGE && abs(dy) < MAX_RANGE ... % bounding box
-       && (dx*cos(phi) + dy*sin(phi)) > 0 ...         % bounding line
-       && (dx^2 + dy^2) < MAX_RANGE^2                 % bounding circle
-   
-        noise=Rsigma*randn(2,1);
+%     if abs(dx) < MAX_RANGE && abs(dy) < MAX_RANGE ... % bounding box
+%        && (dx*cos(phi) + dy*sin(phi)) > 0 ...         % bounding line
+%        && (dx^2 + dy^2) < MAX_RANGE^2                 % bounding circle
+    
+%     if (dx^2 + dy^2) < MAX_RANGE^2 && (dx^2 + dy^2) > 0
+    if d < MAX_RANGE
+        noise = Rsigma*randn(2,1);
         
-        z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
+        z = [z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
     end
+    
+%     noise=Rsigma*randn(2,1);
+%     z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
 end
 end
 
 function [lm, wp] = create_LM_waypoints()
     % 事前に設定した経路計画に沿って走行するルートを指定
     %load('example_webmap.mat');
-    load('example5.mat');
-    fig = figure;
-    plot(lm(1,:),lm(2,:),'b*')
-    hold on, axis equal
-    plot(wp(1,:),wp(2,:), 'k', wp(1,:),wp(2,:),'k.')
-    xlabel('X[m]'), ylabel('Y[m]')
-    set(fig, 'name', 'EKF-SLAM Simulator')
+    load('example2.mat');
+%     fig = figure(1);
+%     plot(lm(1,:),lm(2,:),'b*')
+%     hold on, axis equal
+%     plot(wp(1,:),wp(2,:), 'k', wp(1,:),wp(2,:),'k.')
+%     xlabel('X[m]'), ylabel('Y[m]')
+%     set(fig, 'name', 'EKF-SLAM Simulator')
 end
 
 function DrawGraph(result,xEst,LM)
 %Plot Result
- figure(1);
+figure(1);
 hold off;
 x=[ result.xTrue(:,1:2) result.xEst(:,1:2)];
 set(gca, 'fontsize', 16, 'fontname', 'times');

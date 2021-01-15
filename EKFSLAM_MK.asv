@@ -61,7 +61,7 @@ Rsigma=diag([0.1 toRadian(1)]).^2;
 
 LM = LM';
 
-MAX_RANGE=10;%最大観測距離
+MAX_RANGE=30;%最大観測距離
 
 alpha=1;%ランドマーク識別用マハラノビス距離閾値
 
@@ -89,7 +89,7 @@ while iwp ~= 0
     [Omega, iwp] = compute_steering(xTrue, wp, iwp, AT_WAYPOINT, Omega, RATEG, MAXG, dt);
 
     % perform loops: if final waypoint reached, go back to first
-    if iwp==0 & NUMBER_LOOPS > 1, iwp=1; NUMBER_LOOPS= NUMBER_LOOPS-1; end
+    if iwp==0 && NUMBER_LOOPS > 1, iwp=1; NUMBER_LOOPS= NUMBER_LOOPS-1; end
     
     u = [V Omega]';
     
@@ -97,15 +97,20 @@ while iwp ~= 0
     time = time + dt;
     % Input
     %u=doControl(time)
-    % Observation
-    [z,xTrue,xd,u]=Observation(xTrue, xd, u, LM, MAX_RANGE);
     
-    % EKF-SLAM
+    dtsum= dtsum + dt;
+    if dtsum >= DT_OBSERVE
+        dtsum = 0;
+        % Observation
+        [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE);
+
+        % EKF-SLAM
         [xEst,PEst,NL,yy,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj);     
+
+        % SEIF-SLAM
+    %   [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j); 
+    end
     
-    % SEIF-SLAM
-%       [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j); 
-     
     %Simulation Result
     result.time=[result.time; time];
     result.xTrue=[result.xTrue; xTrue'];
@@ -114,41 +119,42 @@ while iwp ~= 0
     result.u=[result.u; u'];
     
     % offline data store
-    data = store_data(data, xEst, PEst, xTrue);
+%     data = store_data(data, xEst, PEst, xTrue);
     
-    %pcov = make_covariance_ellipses(xEst, PEst);
+%     %pcov = make_covariance_ellipses(xEst, PEst);
 %     ptmp= make_covariance_ellipses(xEst(1:3),PEst(1:3,1:3));
 %     pcov(:,1:size(ptmp,2))= ptmp;
 %     if dtsum==0
 %         pcount= pcount+1;
-%         if pcount == 5
+%         if pcount == 100
 %             gcf = figure(1);
-%             plot(pcov(1,:), pcov(2,:), 'm'); 
-%             plot(data.xTrue(1,1:data.i), data.xTrue(2,1:data.i), 'r--', 'LineWidth', 1.5);
-%             plot(data.xEst(1,1:data.i), data.xEst(2,1:data.i), 'g--', 'LineWidth', 1.5);
-%             legend('LM','Trajectory', 'Waypoints', 'covariance','True', 'Estimate', 'Location', 'best');
+% %              plot(pcov(1,:), pcov(2,:), 'm'); hold on;
+% %              plot(result.xTrue(:,1),result.xTrue(:,2),'.b');hold on;
+%              plot(data.xTrue(1,1:data.i), data.xTrue(2,1:data.i), 'r--', 'LineWidth', 1.5);
+%              plot(data.xEst(1,1:data.i), data.xEst(2,1:data.i), 'g--', 'LineWidth', 1.5);
 %             % Auto save graph
-%             saveas(gcf, 'EKF_SLAM.png');
+% %             saveas(gcf, 'EKF_SLAM.png');
 % %             figure(2);
 % %             imagesc(PEst)
 % %             colorbar
 %             pcount=0;
 %         end
+%         
+% %         legend('LM','Trajectory', 'Waypoints', 'covariance','True', 'Estimate', 'Location', 'best');
 %     end
 %     drawnow
-    
     
 %     Animation(result,xTrue,LM,z,xEst);
     
     %Animation (remove some flames)
-%     if rem(time,2)==0 
-%         Animation(result,xTrue,LM,z,xEst);
-%         %movcount=movcount+1;
-%         %mov(movcount) = getframe(gcf);% アニメーションのフレームをゲットする
-%     end
+    pcount= pcount+1;
+    if pcount == 100
+        Animation(result,xTrue,LM,z,xEst);
+        pcount=0;
+    end
 end
 toc
-DrawGraph(result,xEst,LM);
+% DrawGraph(result,xEst,LM);
 
 function [plines, pcount, dtsum, ftag, da_table, iwp, Omega, data] = Init_other_parameter(lm, xEst, xTrue, PEst)
     % % initialise other variables and constants
@@ -217,6 +223,16 @@ function p= make_ellipse(x,P,s, phi)
     p(1,:)= [a(1,:)+x(1) NaN];
 end
 
+function p= make_laser_lines (rb,xv)
+    % compute set of line segments for laser range-bearing measurements
+    if isempty(rb), p=[]; return, end
+    len= size(rb,2);
+    lnes(1,:)= zeros(1,len)+ xv(1);
+    lnes(2,:)= zeros(1,len)+ xv(2);
+    lnes(3:4,:)= TransformToGlobal([rb(1,:).*cos(rb(2,:)); rb(1,:).*sin(rb(2,:))], xv);
+    p= line_plot_conversion (lnes);
+end
+
 function n=GetnLM(xEst)
 %ランドマークの数を計算する関数
 n=(length(xEst)-3)/2;
@@ -231,7 +247,7 @@ plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;
 if~isempty(z)
     for iz=1:length(z(:,1))
         ray=[xTrue(1:2)';z(iz,3:4)];
-        plot(ray(:,1),ray(:,2),'-r');hold on;
+        plot(ray(:,1),ray(:,2),'-g');hold on;
     end
 end
 %SLAMの地図の表示
@@ -284,16 +300,38 @@ for iz=1:length(LM(:,1))
     yaw(3)=-x(3);
     localLM=HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
     d=norm(localLM);%距離
-    if d<MAX_RANGE %観測範囲内
+    
+    dx  = localLM(1) - x(1);
+    dy  = localLM(2) - x(2);
+    phi = x(3);
+    
+%     if abs(dx) < MAX_RANGE && abs(dy) < MAX_RANGE ... % bounding box
+%        && (dx*cos(phi) + dy*sin(phi)) > 0 ...         % bounding line
+%        && (dx^2 + dy^2) < MAX_RANGE^2                 % bounding circle
+    
+%     if (dx^2 + dy^2) < MAX_RANGE^2 && (dx^2 + dy^2) > 0
+    if d < MAX_RANGE
         noise=Rsigma*randn(2,1);
+        
         z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
     end
+    
+%     noise=Rsigma*randn(2,1);
+%     z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
+end
 end
 
 function [lm, wp] = create_LM_waypoints()
     % 事前に設定した経路計画に沿って走行するルートを指定
     %load('example_webmap.mat');
     load('example1.mat');
+    fig = figure;
+    plot(lm(1,:),lm(2,:),'b*')
+    hold on, axis equal
+    plot(wp(1,:),wp(2,:), 'k', wp(1,:),wp(2,:),'k.')
+    xlabel('X[m]'), ylabel('Y[m]')
+    set(fig, 'name', 'EKF-SLAM Simulator')
+end
 
 function DrawGraph(result,xEst,LM)
 %Plot Result
@@ -316,6 +354,7 @@ ylabel('Y (m)', 'fontsize', 16, 'fontname', 'times');
 legend('Ground Truth','Dead Reckoning','EKF SLAM','True LM','Estimated LM');
 grid on;
 axis equal;
+end
 
 function angle=PI2PI(angle)
 %ロボットの角度を-pi~piの範囲に補正する関数
@@ -326,6 +365,7 @@ angle(i) = angle(i) - 2*pi;
 
 i = find(angle<-pi);
 angle(i) = angle(i) + 2*pi;
+end
 
 function out = HomogeneousTransformation2D(in, base, mode)
 %function out = HomogeneousTransformation2D(in, base,mode)
@@ -374,11 +414,14 @@ end
 if Nin(2)>=3
     out=[out inOther];
 end
+end
 
 function radian = toRadian(degree)
 % degree to radian
 radian = degree/180*pi;
+end
 
 function degree = toDegree(radian)
 % radian to degree
 degree = radian/pi*180;
+end

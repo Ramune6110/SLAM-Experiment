@@ -53,7 +53,7 @@ else
 %     xhat(3) = PI2PI(xhat(3));
     P = (eye(size(xhat,1)) - K*H)*P;
     end
-%     xhat(3) = PI2PI(xhat(3));                                              %角度補正
+    xhat(3) = PI2PI(xhat(3));                                              %角度補正
 end
     
 function [y,S,H]=CalcInnovation(lm,xhat,P,z,LMId)
@@ -71,7 +71,7 @@ function n = NumLM(xhat)
 n = (length(xhat)-3)/2;
 
 function zl=CalcLMPosiFromZ(x,z)
-zl=x(1:2)+[z(1)*cos(x(3)+z(2));z(1)*sin(x(3)+z(2))];                       %観測値からLMの位置を計算する関数
+zl = x(1:2)+[z(1)*cos(x(3)+z(2));z(1)*sin(x(3)+z(2))];                       %観測値からLMの位置を計算する関数
 
 function x = f(x, u)
 global dt;
@@ -82,7 +82,7 @@ B = [dt*cos(x(3))  0
      dt*sin(x(3))  0
           0       dt]; 
 x = x + F'*B*u;
-% x(3)=PI2PI(x(3));%角度補正
+x(3) = PI2PI(x(3));%角度補正
 
 function H=jacobH(q,delta,x,i)
 %観測モデルのヤコビ行列を計算する関数
