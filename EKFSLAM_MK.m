@@ -1,17 +1,15 @@
+clear;
 close all;
-clear all;
-disp('EKFSLAM sample program start!!')
- 
+clc;
+
+% Setup parameter
 Init_Parameter;
 
-% create LM and Waypoints
+% create Landmark and Waypoints
 [LM, wp] = create_LM_waypoints;
 
-time = 0;
-endtime = 60; % シミュレーション終了時間[sec]
 global dt;
 dt = DT_CONTROLS; % シミュレーション刻み時間[sec]
-nSteps = ceil((endtime - time)/dt);%シミュレーションのステップ数
  
 %計算結果格納用変数
 result.time=[];
@@ -24,7 +22,8 @@ result.u=[];
 
 % State Vector [x y yaw]'
 xEst=[0 0 0]';
-global PoseSize;PoseSize=length(xEst);%ロボットの姿勢の状態数[x,y,yaw]
+global PoseSize;
+PoseSize=length(xEst);%ロボットの姿勢の状態数[x,y,yaw]
 global LMSize;
 LMSize = 2;%ランドマークの状態量[x,y]
 
@@ -55,15 +54,15 @@ global Rsigma
 Rsigma=diag([0.1 toRadian(1)]).^2;
 
 %Landmarkの位置 [x, y]
-% LM=[0 15;
-%     10 0;
-%     15 20];
-
 LM = LM';
 
-MAX_RANGE=15;%最大観測距離
+% MAX_RANGE=20;%最大観測距離
+MAX_RANGE=30;%最大観測距離(example1.map)
 
-alpha=1;%ランドマーク識別用マハラノビス距離閾値
+% alpha=0.2;%ランドマーク識別用マハラノビス距離閾値
+% alpha=0.0001;%ランドマーク識別用マハラノビス距離閾値
+% alpha = 10^-9;%ランドマーク識別用マハラノビス距離閾値(example1.map)
+alpha = 1;
 
 PEst = diag(ones(1,3)*10^-4);
 initP=eye(2)*100000;
@@ -79,42 +78,55 @@ initXi = initP\[0;0]; % 情報ベクトル
 
 [plines, pcount, dtsum, ftag, da_table, iwp, Omega, data] = Init_other_parameter(LM, xEst, xTrue, PEst);
  
+%------------------------------------------------------------------------------------
+% MAIN LOOP
+%------------------------------------------------------------------------------------
 tic;
-% main loop 
 while iwp ~= 0
+    %--------------------------------------------------------
+    % Control Input
+    %--------------------------------------------------------
     % Waypointsの従った角速度を計算
     [Omega, iwp] = compute_steering(xTrue, wp, iwp, AT_WAYPOINT, Omega, RATEG, MAXG, dt);
 
     % perform loops: if final waypoint reached, go back to first
     if iwp==0 && NUMBER_LOOPS > 1, iwp=1; NUMBER_LOOPS= NUMBER_LOOPS-1; end
     
+    % 速度と角速度
     u = [V Omega]';
     %--------------------------------------------------------
-    % EKF predict step
-%     [xEst,PEst] = predict (xEst, PEst, u);
-   
+    % EKF-SLAM
+    %--------------------------------------------------------
+    % Observation
+    [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE);
+
+    % EKF-SLAM
+    [xEst,PEst,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj); 
+    
     dtsum= dtsum + dt;
     if dtsum >= DT_OBSERVE
-        dtsum = 0;
-        % Observation
-        [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE);
-
-        % EKF-SLAM
-%         [xEst,PEst,NL,yy,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj);     
-
-        % SEIF-SLAM
-        [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j); 
+        dtsum= 0;
     end
-    
+    %--------------------------------------------------------
+    % SEIF-SLAM
+    %--------------------------------------------------------
+    % SEIF-SLAM(example1.mapに対してのみ有効, MAXRANGE = 25m)
+%     [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,alpha,j); 
+%     PEst = inv(invPEst);
+%     [xEst,Omega,Xi,j] = SEIF_SLAM(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j);
+%     PEst = inv(invPEst);
+    %--------------------------------------------------------
+    % SAVE DATA
+    %--------------------------------------------------------
     %Simulation Result
-    result.time=[result.time; time];
+%     result.time=[result.time; time];
     result.xTrue=[result.xTrue; xTrue'];
     result.xd=[result.xd; xd'];
     result.xEst=[result.xEst;xEst(1:3)'];
     result.u=[result.u; u'];
     
     % offline data store
-%     data = store_data(data, xEst, PEst, xTrue);
+    data = store_data(data, xEst, PEst, xTrue);
     
 %     %pcov = make_covariance_ellipses(xEst, PEst);
 %     ptmp= make_covariance_ellipses(xEst(1:3),PEst(1:3,1:3));
@@ -123,8 +135,7 @@ while iwp ~= 0
 %         pcount= pcount+1;
 %         if pcount == 100
 %             gcf = figure(1);
-% %              plot(pcov(1,:), pcov(2,:), 'm'); hold on;
-% %              plot(result.xTrue(:,1),result.xTrue(:,2),'.b');hold on;
+%              plot(pcov(1,:), pcov(2,:), 'm'); hold on;
 %              plot(data.xTrue(1,1:data.i), data.xTrue(2,1:data.i), 'r--', 'LineWidth', 1.5);
 %              plot(data.xEst(1,1:data.i), data.xEst(2,1:data.i), 'g--', 'LineWidth', 1.5);
 %             % Auto save graph
@@ -139,13 +150,19 @@ while iwp ~= 0
 %     end
 %     drawnow
     
-%     Animation(result,xTrue,LM,z,xEst);
-    
-    %Animation (remove some flames)
+    %--------------------------------------------------------
+    % Animation
+    %--------------------------------------------------------
     pcount= pcount+1;
     if pcount == 200
-        Animation(result,xTrue,LM,z,xEst);
+        Animation(result,xTrue,LM,z,xEst, PEst);
         pcount=0;
+    end
+    if dtsum == 0
+        % 状態推定誤差共分散行列の描画
+        covstate = make_covariance_ellipses(xEst,PEst);
+        plot(covstate(1,:),covstate(2,:), 'm'); 
+        drawnow;
     end
 end
 toc
@@ -218,22 +235,12 @@ function p= make_ellipse(x,P,s, phi)
     p(1,:)= [a(1,:)+x(1) NaN];
 end
 
-function p= make_laser_lines (rb,xv)
-    % compute set of line segments for laser range-bearing measurements
-    if isempty(rb), p=[]; return, end
-    len= size(rb,2);
-    lnes(1,:)= zeros(1,len)+ xv(1);
-    lnes(2,:)= zeros(1,len)+ xv(2);
-    lnes(3:4,:)= TransformToGlobal([rb(1,:).*cos(rb(2,:)); rb(1,:).*sin(rb(2,:))], xv);
-    p= line_plot_conversion (lnes);
-end
-
 function n=GetnLM(xEst)
 %ランドマークの数を計算する関数
 n=(length(xEst)-3)/2;
 end
 
-function Animation(result,xTrue,LM,z,xEst)
+function Animation(result,xTrue,LM,z,xEst, PEst)
 %アニメーションを描画する関数
 hold off;
 plot(result.xTrue(:,1),result.xTrue(:,2),'.b');hold on;
@@ -245,8 +252,9 @@ if~isempty(z)
         plot(ray(:,1),ray(:,2),'-g');hold on;
     end
 end
+
 %SLAMの地図の表示
-for il=1:GetnLM(xEst);
+for il=1:GetnLM(xEst)
     plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.c');hold on;
 end
 % plot(zl(1,:),zl(2,:),'.b');hold on;
@@ -257,9 +265,7 @@ x=result.xEst(end,:);
 quiver(x(1),x(2),arrow*cos(x(3)),arrow*sin(x(3)),'ok');hold on;
 axis equal;
 grid on;
-%動画を保存する場合
-%movcount=movcount+1;
-%mov(movcount) = getframe(gcf);% アニメーションのフレームをゲットする
+
 drawnow;
 end
 
@@ -290,25 +296,19 @@ xd=f(xd, u);% Dead Reckoning
 %Simulate Observation
 z=[];
 for iz=1:length(LM(:,1))
+    % 2021 1/31
     %LMの位置をロボット座標系に変換
-    yaw=zeros(3,1);
-    yaw(3)=-x(3);
-    localLM=HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
-    d=norm(localLM);%距離
-    
+    yaw = zeros(3,1);
+    yaw(3) = -x(3);
+    localLM = HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
     dx  = localLM(1) - x(1);
     dy  = localLM(2) - x(2);
-    phi = x(3);
-    
-%     if abs(dx) < MAX_RANGE && abs(dy) < MAX_RANGE ... % bounding box
-%        && (dx*cos(phi) + dy*sin(phi)) > 0 ...         % bounding line
-%        && (dx^2 + dy^2) < MAX_RANGE^2                 % bounding circle
-    
-%     if (dx^2 + dy^2) < MAX_RANGE^2 && (dx^2 + dy^2) > 0
+    d   = norm(localLM);%距離
+    angle = PI2PI(atan2(localLM(2),localLM(1)));
+%     if abs(pi / 2 - angle) < pi && d < MAX_RANGE
     if d < MAX_RANGE
         noise = Rsigma*randn(2,1);
-        
-        z = [z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
+        z = [z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))) + noise(2) LM(iz,:)]];
     end
     
 %     noise=Rsigma*randn(2,1);
@@ -319,13 +319,13 @@ end
 function [lm, wp] = create_LM_waypoints()
     % 事前に設定した経路計画に沿って走行するルートを指定
     %load('example_webmap.mat');
-    load('example2.mat');
-%     fig = figure(1);
-%     plot(lm(1,:),lm(2,:),'b*')
-%     hold on, axis equal
-%     plot(wp(1,:),wp(2,:), 'k', wp(1,:),wp(2,:),'k.')
-%     xlabel('X[m]'), ylabel('Y[m]')
-%     set(fig, 'name', 'EKF-SLAM Simulator')
+    load('example1.mat');
+    fig = figure(1);
+    plot(lm(1,:),lm(2,:),'b*')
+    hold on, axis equal
+    plot(wp(1,:),wp(2,:), 'k', wp(1,:),wp(2,:),'k.')
+    xlabel('X[m]'), ylabel('Y[m]')
+    set(fig, 'name', 'EKF-SLAM Simulator')
 end
 
 function DrawGraph(result,xEst,LM)
@@ -339,7 +339,7 @@ plot(result.xd(:,1), result.xd(:,2),'-k','linewidth', 4); hold on;
 plot(x(:,3), x(:,4),'-r','linewidth', 4); hold on;
 plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;%真のランドマークの位置
 %LMの地図の表示
-for il=1:GetnLM(xEst);
+for il=1:GetnLM(xEst)
     plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.g','MarkerSize',10);hold on;
 end
  

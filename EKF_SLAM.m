@@ -1,12 +1,9 @@
-function [xhat,P,NL,y,jx] = EKF_SLAM(U,LMo,xhat,P,initP,alpha,jx)
+function [xhat,P,jx] = EKF_SLAM(U,LMo,xhat,P,initP,alpha,jx)
 % ------ EKF-SLAM --------
 global LMSize;    
 global R;
 global dt;
-% global Rsigma;
-% global LM;
-        NL = NumLM(xhat);
-%         LMo
+
 if isempty(LMo)
     F = horzcat(eye(3),zeros(3,LMSize*NumLM(xhat))); 
     B = [dt*cos(xhat(3))  0
@@ -14,15 +11,12 @@ if isempty(LMo)
               0       dt]; 
     xhat = xhat + F'*B*U;
 %     xhat(3) = PI2PI(xhat(3));                                              %角度補正
-y = [0; 0];
-% disp('観測なし')
 else
-% disp('観測あり')
     % Predict
     xhat = f(xhat, U);
 %     xhat(3) = PI2PI(xhat(3));                                              %角度補正
     [G, Fx] = jacobF(xhat, U);
-    P = G'*P*G + Fx'*R*Fx;        
+    P = G'*P*G + Fx'*R*Fx;    
     for ilm = 1: length(LMo(:,1))
         zl=CalcLMPosiFromZ(xhat,LMo(ilm,:));                               %観測値そのものからLMの位置を計算
         xAug=[xhat;zl];
@@ -32,9 +26,12 @@ else
         jM = [];                                                           % 特徴量格納
         for jrow = 1 : length(Jx)                                          % 既知の特徴量による判別
           if jrow == length(Jx)
-             jM = [jM 10^(-1)];
+             jM = [jM alpha];
           else
-             D = norm(Jx(jrow,:)-LMo(ilm,3));
+             lm=xAug(4+2*(jrow-1):5+2*(jrow-1));
+             [y,S,H]=CalcInnovation(lm,xAug,PAug,LMo(ilm,1:2),jrow);
+             D = y' * inv(S) * y;
+%              D = norm(Jx(jrow,:)-LMo(ilm,3))
              jM = [jM D];
           end
         end                                                                % 特徴量の判別終了                                                             
@@ -47,15 +44,14 @@ else
     lm=xhat(4+2*(num-1):5+2*(num-1));                                          %対応付けられたランドマークデータの取得
    
     %innovation and update
-   [y,S,H]=CalcInnovation(lm,xhat,P,LMo(ilm,1:2),num);
+    [y,S,H]=CalcInnovation(lm,xhat,P,LMo(ilm,1:2),num);
     K = P*H' / S;
     xhat = xhat + K*y;
-%     xhat(3) = PI2PI(xhat(3));
-    P = (eye(size(xhat,1)) - K*H)*P;
+    P = P - K * S * K';
     end
-    xhat(3) = PI2PI(xhat(3));                                              %角度補正
+%     xhat(3) = PI2PI(xhat(3));                                              %角度補正
 end
-    
+
 function [y,S,H]=CalcInnovation(lm,xhat,P,z,LMId)
 %対応付け結果からイノベーションを計算する関数
 global Q;
@@ -66,6 +62,7 @@ zp=[sqrt(q) PI2PI(zangle)];                                                %観測
 y=(z-zp)';
 H=jacobH(q,delta,xhat,LMId);
 S=H*P*H'+Q;
+S = (S+S')*0.5; % make symmetric
 
 function n = NumLM(xhat)
 n = (length(xhat)-3)/2;
@@ -86,13 +83,13 @@ x(3) = PI2PI(x(3));%角度補正
 
 function H=jacobH(q,delta,x,i)
 %観測モデルのヤコビ行列を計算する関数
-sq=sqrt(q);
-G=[-sq*delta(1) -sq*delta(2) 0 sq*delta(1) sq*delta(2);
-    delta(2)    -delta(1)   -1 -delta(2)    delta(1)];
-G=G/q;
-F=[eye(3) zeros(3,2*NumLM(x));
-   zeros(2,3) zeros(2,2*(i-1)) eye(2) zeros(2,2*NumLM(x)-2*i)];
-H=G*F;
+sq = sqrt(q);
+G = [-sq*delta(1) -sq*delta(2) 0 sq*delta(1) sq*delta(2);
+     delta(2)    -delta(1)   -1 -delta(2)    delta(1)];
+G = G / q;
+F = [eye(3) zeros(3,2*NumLM(x));
+     zeros(2,3) zeros(2,2*(i-1)) eye(2) zeros(2,2*NumLM(x)-2*i)];
+H = G * F;
 
 function [G, Fx] = jacobF(x, u)
 global dt;

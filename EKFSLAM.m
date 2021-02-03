@@ -7,7 +7,7 @@ if isempty(z)
          dt*sin(xEst(3))  0
               0       dt]; 
     xEst = xEst + F'*B*u;
-%     xEst(3) = PI2PI(xEst(3));                                              
+    xEst(3) = PI2PI(xEst(3));                                              
     disp('äœë™Ç»Çµ')
 else
     disp('äœë™Ç†ÇË')
@@ -52,7 +52,7 @@ else
         PEst = (eye(size(xEst,1)) - K*H)*PEst;
     end
 end
-%     xEst(3)=PI2PI(xEst(3));%äpìxï‚ê≥
+    xEst(3)=PI2PI(xEst(3));%äpìxï‚ê≥
 end
 
 function [y,S,H]=CalcInnovation(lm,xEst,PEst,z,LMId)
