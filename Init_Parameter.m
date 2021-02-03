@@ -11,7 +11,8 @@ DT_CONTROLS = 0.025; % seconds, time interval between control signals
 % observation parameters
 %--------------------------------------------------------
 % MAX_RANGE=20;%最大観測距離
-MAX_RANGE  = 30;%最大観測距離(example1.map)
+% MAX_RANGE  = 30;%最大観測距離(EKF-SLAM example1.map)
+MAX_RANGE  = 20;%最大観測距離(SEIF-SLAM example1.map)
 DT_OBSERVE = 8 * DT_CONTROLS; % seconds, time interval between observations
 
 %--------------------------------------------------------
@@ -74,7 +75,8 @@ Rsigma = diag([0.1 toRadian(1)]).^2;
 % alpha=0.2;%ランドマーク識別用マハラノビス距離閾値
 % alpha=0.0001;%ランドマーク識別用マハラノビス距離閾値
 % alpha = 10^-9;%ランドマーク識別用マハラノビス距離閾値(example1.map)
-alpha = 3;
+% alpha = 3; %(EKF-SLAM example1.map)
+alpha = 0.5; %(SEIF-SLAM example1.map)
 
 PEst  = diag(ones(1,3)*10^-4);
 initP = eye(2)*10^9;

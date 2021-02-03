@@ -38,7 +38,7 @@ while iwp ~= 0
     [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE, Qsigma, Rsigma);
 
     % EKF-SLAM
-    [xEst,PEst,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj); 
+%     [xEst,PEst,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj); 
     
     dtsum= dtsum + dt;
     if dtsum >= DT_OBSERVE
@@ -48,10 +48,11 @@ while iwp ~= 0
     % SEIF-SLAM
     %--------------------------------------------------------
     % SEIF-SLAM(example1.map‚É‘Î‚µ‚Ä‚Ì‚Ý—LŒø, MAXRANGE = 25m)
+    [xEst,invPEst,Xi,j] = SEIF_SLAM_MK(u,z,xEst,invPEst,Xi,initinvPEst,initXi,alpha,j); 
+    PEst = inv(invPEst);
 %     [xEst,invPEst,Xi,j] = SEIF_SLAM_cubic(u,z,xEst,invPEst,Xi,initinvPEst,initXi,alpha,j); 
 %     PEst = inv(invPEst);
-%     [xEst,Omega,Xi,j] = SEIF_SLAM(u,z,xEst,invPEst,Xi,initinvPEst,initXi,j);
-%     PEst = inv(invPEst);
+
     %--------------------------------------------------------
     % SAVE DATA
     %--------------------------------------------------------

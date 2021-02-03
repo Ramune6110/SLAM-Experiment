@@ -16,12 +16,18 @@ function [xEst,PEst,jx] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jx)
     end
 end
 
+%--------------------------------------------------------
+% Predict
+%--------------------------------------------------------
 function [xEst, PEst] = predict(xEst, PEst, u, R)
    xEst = f(xEst, u);
    [G, Fx] = jacobF(xEst, u);
    PEst = G'*PEst*G + Fx'*R*Fx;    
 end
 
+%--------------------------------------------------------
+% Update
+%--------------------------------------------------------
 function [xEst, PEst, jx] = update(xEst, PEst, initP, z, alpha, jx)
     global LMSize;    
   
@@ -62,10 +68,10 @@ end
 function [y,S,H]=CalcInnovation(lm,xEst,PEst,z,LMId)
     %対応付け結果からイノベーションを計算する関数
     global Q;
-    delta = lm - xEst(1:2);                                                        %dx,dyの導出(絶対座標系)
-    q = delta' * delta;                                                            %dx^2,dy^2の導出
+    delta = lm - xEst(1:2);                                                %dx,dyの導出(絶対座標系)
+    q = delta' * delta;                                                    %dx^2,dy^2の導出
     zangle = atan2(delta(2),delta(1)) - xEst(3);
-    zp = [sqrt(q) PI2PI(zangle)];                                                %観測値の予測
+    zp = [sqrt(q) PI2PI(zangle)];                                          %観測値の予測
     y = (z - zp)';
     H = jacobH(q,delta,xEst,LMId);
     S = H * PEst * H' + Q;
@@ -77,7 +83,7 @@ function n = NumLM(xEst)
 end
 
 function zl=CalcLMPosiFromZ(x,z)
-    zl = x(1:2)+[z(1)*cos(x(3)+z(2));z(1)*sin(x(3)+z(2))];                       %観測値からLMの位置を計算する関数
+    zl = x(1:2)+[z(1)*cos(x(3)+z(2));z(1)*sin(x(3)+z(2))];                 %観測値からLMの位置を計算する関数
 end
 
 function x = f(x, u)
