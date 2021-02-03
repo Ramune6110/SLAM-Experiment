@@ -8,73 +8,8 @@ Init_Parameter;
 % create Landmark and Waypoints
 [LM, wp] = create_LM_waypoints;
 
-global dt;
-dt = DT_CONTROLS; % シミュレーション刻み時間[sec]
- 
-%計算結果格納用変数
-result.time=[];
-result.xTrue=[];
-result.xd=[];
-result.xEst=[];
-result.z=[];
-result.PEst=[];
-result.u=[];
-
-% State Vector [x y yaw]'
-xEst=[0 0 0]';
-global PoseSize;
-PoseSize=length(xEst);%ロボットの姿勢の状態数[x,y,yaw]
-global LMSize;
-LMSize = 2;%ランドマークの状態量[x,y]
-
-% True State
-xTrue=xEst;
- 
-% Dead Reckoning State
-xd=xTrue;
- 
-% Covariance Matrix for predict
-global R;
-R = diag([0.0001 0.0001 0.0001]).^2;
- 
-% Covariance Matrix for observation
-global Q;
-% Q = diag([0.3^2 (3.0 * pi / 180)^2]);%range[m], Angle[rad]
-Q = diag([0.5 0.5]).^2; 
-
-global Q1;
-Q1 = inv(R);
-global R1;
-R1 = inv(Q);
-
-% Simulation parameter
-global Qsigma
-Qsigma=diag([0.3 toRadian(3)]).^2;
-global Rsigma
-Rsigma=diag([0.1 toRadian(1)]).^2;
-
 %Landmarkの位置 [x, y]
 LM = LM';
-
-% MAX_RANGE=20;%最大観測距離
-MAX_RANGE=30;%最大観測距離(example1.map)
-
-% alpha=0.2;%ランドマーク識別用マハラノビス距離閾値
-% alpha=0.0001;%ランドマーク識別用マハラノビス距離閾値
-% alpha = 10^-9;%ランドマーク識別用マハラノビス距離閾値(example1.map)
-alpha = 1;
-
-PEst = diag(ones(1,3)*10^-4);
-initP=eye(2)*100000;
-
-jj = [];
-
-% SEIF-SLAM
-j = [];
-invPEst = inv(PEst);
-initinvPEst = inv(initP);    
-Xi = PEst\xEst; % 情報ベクトル
-initXi = initP\[0;0]; % 情報ベクトル
 
 [plines, pcount, dtsum, ftag, da_table, iwp, Omega, data] = Init_other_parameter(LM, xEst, xTrue, PEst);
  
@@ -98,7 +33,7 @@ while iwp ~= 0
     % EKF-SLAM
     %--------------------------------------------------------
     % Observation
-    [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE);
+    [z,xTrue,xd,u] = Observation(xTrue, xd, u, LM, MAX_RANGE, Qsigma, Rsigma);
 
     % EKF-SLAM
     [xEst,PEst,jj] = EKF_SLAM(u,z,xEst,PEst,initP,alpha,jj); 
@@ -126,7 +61,7 @@ while iwp ~= 0
     result.u=[result.u; u'];
     
     % offline data store
-    data = store_data(data, xEst, PEst, xTrue);
+%     data = store_data(data, xEst, PEst, xTrue);
     
 %     %pcov = make_covariance_ellipses(xEst, PEst);
 %     ptmp= make_covariance_ellipses(xEst(1:3),PEst(1:3,1:3));
@@ -236,89 +171,82 @@ function p= make_ellipse(x,P,s, phi)
 end
 
 function n=GetnLM(xEst)
-%ランドマークの数を計算する関数
-n=(length(xEst)-3)/2;
+    %ランドマークの数を計算する関数
+    n=(length(xEst)-3)/2;
 end
 
 function Animation(result,xTrue,LM,z,xEst, PEst)
-%アニメーションを描画する関数
-hold off;
-plot(result.xTrue(:,1),result.xTrue(:,2),'.b');hold on;
-plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;
-%観測線の表示
-if~isempty(z)
-    for iz=1:length(z(:,1))
-        ray=[xTrue(1:2)';z(iz,3:4)];
-        plot(ray(:,1),ray(:,2),'-g');hold on;
+    %アニメーションを描画する関数
+    hold off;
+    plot(result.xTrue(:,1),result.xTrue(:,2),'.b');hold on;
+    plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;
+    %観測線の表示
+    if~isempty(z)
+        for iz=1:length(z(:,1))
+            ray=[xTrue(1:2)';z(iz,3:4)];
+            plot(ray(:,1),ray(:,2),'-g');hold on;
+        end
     end
-end
 
-%SLAMの地図の表示
-for il=1:GetnLM(xEst)
-    plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.c');hold on;
-end
-% plot(zl(1,:),zl(2,:),'.b');hold on;
-plot(result.xd(:,1),result.xd(:,2),'.k');hold on;
-plot(result.xEst(:,1),result.xEst(:,2),'.r');hold on;
-arrow=0.5;
-x=result.xEst(end,:);
-quiver(x(1),x(2),arrow*cos(x(3)),arrow*sin(x(3)),'ok');hold on;
-axis equal;
-grid on;
+    %SLAMの地図の表示
+    for il=1:GetnLM(xEst)
+        plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.c');hold on;
+    end
+    % plot(zl(1,:),zl(2,:),'.b');hold on;
+    plot(result.xd(:,1),result.xd(:,2),'.k');hold on;
+    plot(result.xEst(:,1),result.xEst(:,2),'.r');hold on;
+    arrow=0.5;
+    x=result.xEst(end,:);
+    quiver(x(1),x(2),arrow*cos(x(3)),arrow*sin(x(3)),'ok');hold on;
+    axis equal;
+    grid on;
 
-drawnow;
+    drawnow;
 end
 
 function x = f(x, u)
-% Motion Model
-global dt;
-global PoseSize;
-global LMSize;
- 
-F = horzcat(eye(PoseSize),zeros(PoseSize,LMSize*GetnLM(x)));
- 
-B = [dt*cos(x(3)) 0
-     dt*sin(x(3)) 0
-     0 dt];
+    % Motion Model
+    global dt;
+    global PoseSize;
+    global LMSize;
 
-x = x+F'*B*u;
-x(3) = PI2PI(x(3));%角度補正
+    F = horzcat(eye(PoseSize),zeros(PoseSize,LMSize*GetnLM(x)));
+
+    B = [dt*cos(x(3)) 0
+         dt*sin(x(3)) 0
+         0 dt];
+
+    x = x+F'*B*u;
+    x(3) = PI2PI(x(3));%角度補正
 end
 
-function [z, x, xd, u] = Observation(x, xd, u, LM ,MAX_RANGE)
-%Calc Observation from noise prameter
-global Qsigma;
-global Rsigma;
- 
-x=f(x, u);% Ground Truth
-u=u+Qsigma*randn(2,1);%add Process Noise
-xd=f(xd, u);% Dead Reckoning
-%Simulate Observation
-z=[];
-for iz=1:length(LM(:,1))
-    % 2021 1/31
-    %LMの位置をロボット座標系に変換
-    yaw = zeros(3,1);
-    yaw(3) = -x(3);
-    localLM = HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
-    dx  = localLM(1) - x(1);
-    dy  = localLM(2) - x(2);
-    d   = norm(localLM);%距離
-    angle = PI2PI(atan2(localLM(2),localLM(1)));
-%     if abs(pi / 2 - angle) < pi && d < MAX_RANGE
-    if d < MAX_RANGE
-        noise = Rsigma*randn(2,1);
-        z = [z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))) + noise(2) LM(iz,:)]];
+function [z, x, xd, u] = Observation(x, xd, u, LM ,MAX_RANGE, Qsigma, Rsigma)
+    %Calc Observation from noise prameter
+    x  = f(x, u);% Ground Truth
+    u  = u + Qsigma * randn(2,1);%add Process Noise
+    xd = f(xd, u);% Dead Reckoning
+    %Simulate Observation
+    z = [];
+    for iz = 1:length(LM(:, 1))
+        % 2021 1/31
+        %LMの位置をロボット座標系に変換
+        yaw = zeros(3,1);
+        yaw(3) = -x(3);
+        localLM = HomogeneousTransformation2D(LM(iz,:)-x(1:2)',yaw');
+        dx  = localLM(1) - x(1);
+        dy  = localLM(2) - x(2);
+        d   = norm(localLM);%距離
+        angle = PI2PI(atan2(localLM(2),localLM(1)));
+    %     if abs(pi / 2 - angle) < pi && d < MAX_RANGE
+        if d < MAX_RANGE
+            noise = Rsigma * randn(2,1);
+            z = [z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))) + noise(2) LM(iz,:)]];
+        end
     end
-    
-%     noise=Rsigma*randn(2,1);
-%     z=[z;[d+noise(1) PI2PI(atan2(localLM(2),localLM(1))+noise(2)) LM(iz,:)]];
-end
 end
 
 function [lm, wp] = create_LM_waypoints()
     % 事前に設定した経路計画に沿って走行するルートを指定
-    %load('example_webmap.mat');
     load('example1.mat');
     fig = figure(1);
     plot(lm(1,:),lm(2,:),'b*')
@@ -329,37 +257,37 @@ function [lm, wp] = create_LM_waypoints()
 end
 
 function DrawGraph(result,xEst,LM)
-%Plot Result
-figure(1);
-hold off;
-x=[ result.xTrue(:,1:2) result.xEst(:,1:2)];
-set(gca, 'fontsize', 16, 'fontname', 'times');
-plot(x(:,1), x(:,2),'-b','linewidth', 4); hold on;
-plot(result.xd(:,1), result.xd(:,2),'-k','linewidth', 4); hold on;
-plot(x(:,3), x(:,4),'-r','linewidth', 4); hold on;
-plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;%真のランドマークの位置
-%LMの地図の表示
-for il=1:GetnLM(xEst)
-    plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.g','MarkerSize',10);hold on;
-end
- 
-title('EKF SLAM Result', 'fontsize', 16, 'fontname', 'times');
-xlabel('X (m)', 'fontsize', 16, 'fontname', 'times');
-ylabel('Y (m)', 'fontsize', 16, 'fontname', 'times');
-legend('Ground Truth','Dead Reckoning','EKF SLAM','True LM','Estimated LM');
-grid on;
-axis equal;
+    %Plot Result
+    figure(1);
+    hold off;
+    x=[ result.xTrue(:,1:2) result.xEst(:,1:2)];
+    set(gca, 'fontsize', 16, 'fontname', 'times');
+    plot(x(:,1), x(:,2),'-b','linewidth', 4); hold on;
+    plot(result.xd(:,1), result.xd(:,2),'-k','linewidth', 4); hold on;
+    plot(x(:,3), x(:,4),'-r','linewidth', 4); hold on;
+    plot(LM(:,1),LM(:,2),'pk','MarkerSize',10);hold on;%真のランドマークの位置
+    %LMの地図の表示
+    for il=1:GetnLM(xEst)
+        plot(xEst(4+2*(il-1)),xEst(5+2*(il-1)),'.g','MarkerSize',10);hold on;
+    end
+
+    title('EKF SLAM Result', 'fontsize', 16, 'fontname', 'times');
+    xlabel('X (m)', 'fontsize', 16, 'fontname', 'times');
+    ylabel('Y (m)', 'fontsize', 16, 'fontname', 'times');
+    legend('Ground Truth','Dead Reckoning','EKF SLAM','True LM','Estimated LM');
+    grid on;
+    axis equal;
 end
 
 function angle=PI2PI(angle)
-%ロボットの角度を-pi~piの範囲に補正する関数
-angle = mod(angle, 2*pi);
+    %ロボットの角度を-pi~piの範囲に補正する関数
+    angle = mod(angle, 2*pi);
 
-i = find(angle>pi);
-angle(i) = angle(i) - 2*pi;
+    i = find(angle>pi);
+    angle(i) = angle(i) - 2*pi;
 
-i = find(angle<-pi);
-angle(i) = angle(i) + 2*pi;
+    i = find(angle<-pi);
+    angle(i) = angle(i) + 2*pi;
 end
 
 function out = HomogeneousTransformation2D(in, base, mode)
@@ -384,39 +312,39 @@ function out = HomogeneousTransformation2D(in, base, mode)
 %                        x_out_2  y_out_2;
 %                               ....]
 
-%回転行列
-Rot=[cos(base(3)) sin(base(3)); -sin(base(3)) cos(base(3))];
+    %回転行列
+    Rot=[cos(base(3)) sin(base(3)); -sin(base(3)) cos(base(3))];
 
-%点数分だけbase座標を配列に格納
-Nin=size(in);
-baseMat=repmat(base(1:2),Nin(1),1);
+    %点数分だけbase座標を配列に格納
+    Nin=size(in);
+    baseMat=repmat(base(1:2),Nin(1),1);
 
-% x-y以外のデータが入っていた場合．一回他の変数に置いておく．
-if Nin(2)>=3
-    inxy=in(:,1:2);
-    inOther=in(:,3:end);
-    in=inxy;
-end
+    % x-y以外のデータが入っていた場合．一回他の変数に置いておく．
+    if Nin(2)>=3
+        inxy=in(:,1:2);
+        inOther=in(:,3:end);
+        in=inxy;
+    end
 
-%同次変換
-if nargin==2 || mode==0 %回転→並進
-    out=baseMat+in*Rot;
-else %並進→回転
-    out=(baseMat+in)*Rot;
-end
-    
-%取り除いた値をくっつける．
-if Nin(2)>=3
-    out=[out inOther];
-end
+    %同次変換
+    if nargin==2 || mode==0 %回転→並進
+        out=baseMat+in*Rot;
+    else %並進→回転
+        out=(baseMat+in)*Rot;
+    end
+
+    %取り除いた値をくっつける．
+    if Nin(2)>=3
+        out=[out inOther];
+    end
 end
 
 function radian = toRadian(degree)
-% degree to radian
-radian = degree/180*pi;
+    % degree to radian
+    radian = degree/180*pi;
 end
 
 function degree = toDegree(radian)
-% radian to degree
-degree = radian/pi*180;
+    % radian to degree
+    degree = radian/pi*180;
 end
