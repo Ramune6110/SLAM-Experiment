@@ -2,6 +2,8 @@ clear;
 close all;
 clc;
 
+addpath(genpath('./map'));
+
 % Setup parameter
 Init_Parameter;
 

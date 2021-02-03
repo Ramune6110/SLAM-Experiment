@@ -28,7 +28,7 @@ if d2 < minD^2
 end
 
 % compute change in G to point towards current waypoint
-deltaG = pi_to_pi(atan2(cwp(2)-x(2), cwp(1)-x(1)) - x(3) - G);
+deltaG = PI2PI(atan2(cwp(2)-x(2), cwp(1)-x(1)) - x(3) - G);
 
 % limit rate
 maxDelta = rateG*dt;
@@ -41,3 +41,13 @@ G= G+deltaG;
 if abs(G) > maxG
     G= sign(G)*maxG;
 end
+
+function angle=PI2PI(angle)
+    %ロボットの角度を-pi~piの範囲に補正する関数
+    angle = mod(angle, 2*pi);
+
+    i = find(angle>pi);
+    angle(i) = angle(i) - 2*pi;
+
+    i = find(angle<=-pi);
+    angle(i) = angle(i) + 2*pi;
